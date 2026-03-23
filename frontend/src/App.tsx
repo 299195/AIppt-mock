@@ -42,6 +42,10 @@ const STATUS_LABEL: Record<string, string> = {
   done: "已完成",
   succeeded: "已完成",
   success: "已完成",
+  draft: "草稿",
+  outline_generated: "大纲已生成",
+  descriptions_generated: "文案已生成",
+  completed: "已完成",
   failed: "失败",
   error: "失败",
 };
@@ -103,7 +107,7 @@ function App() {
 
   const downloadUrl = useMemo(() => fileUrl(job?.pptx_url ?? null), [job?.pptx_url]);
 
-  const statusLabel = (status: string): string => STATUS_LABEL[status] ?? "进行中";
+  const statusLabel = (status: string): string => STATUS_LABEL[status.toLowerCase()] ?? "进行中";
   const formatHistoryTime = (value: string): string => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -329,13 +333,14 @@ function App() {
                 <input
                   className="page-stepper"
                   type="number"
-                  min={1}
-                  max={60}
+                  min={8}
+                  max={12}
                   step={1}
                   value={pages}
                   onChange={(e) => {
                     const value = Number(e.target.value);
-                    setPages(Number.isFinite(value) ? value : 1);
+                    const clamped = Number.isFinite(value) ? Math.min(12, Math.max(8, value)) : 8;
+                    setPages(clamped);
                     setOutlineText("");
                   }}
                 />

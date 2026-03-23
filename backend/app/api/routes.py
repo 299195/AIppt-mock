@@ -4,13 +4,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import List
+from typing import Any, List
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.config import settings
-from app.graph.workflow import llm, run_generation
 from app.schemas import (
     GenerateRequest,
     GenerateResponse,
@@ -19,16 +18,182 @@ from app.schemas import (
     ModelConfigResponse,
     OutlinePreviewRequest,
     OutlinePreviewResponse,
+    PageDTO,
+    ProjectCreateRequest,
+    ProjectCreateResponse,
+    ProjectDetailDTO,
+    ProjectListItemDTO,
+    ProjectOutlineGenerateRequest,
     RewriteRequest,
     SlideDTO,
+    TaskDTO,
+    TaskProgressDTO,
+    TaskStartResponse,
     TemplateItem,
     UploadParseResponse,
 )
 from app.services.parser import parse_text_input, read_uploaded_file
+from app.services.project_workflow import (
+    clean_outline_items,
+    generate_descriptions_task,
+    generate_ppt_task,
+    get_outline_for_project,
+    llm,
+    rebuild_project_pages,
+    rewrite_project,
+    utc_now_iso,
+)
+from app.services.task_manager import task_manager
 from app.services.template_catalog import list_templates, template_exists
-from app.storage.db import get_job, list_jobs
+from app.storage.db import (
+    create_project as db_create_project,
+    create_task,
+    get_project,
+    get_project_task,
+    get_task,
+    list_pages,
+    list_projects,
+    make_progress,
+)
+
 
 router = APIRouter()
+
+
+def _parse_json(raw: str | None, fallback: Any) -> Any:
+    if raw is None:
+        return fallback
+    try:
+        return json.loads(raw)
+    except Exception:
+        return fallback
+
+
+def _as_dt(raw: str | None) -> datetime:
+    if not raw:
+        return datetime.utcnow()
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return datetime.utcnow()
+
+
+def _row_to_page_dto(row: Any) -> PageDTO:
+    outline_content = _parse_json(row["outline_content"], {})
+    description_content = _parse_json(row["description_content"], None)
+    return PageDTO(
+        page_id=str(row["page_id"]),
+        order_index=int(row["order_index"]),
+        outline_content={
+            "title": str(outline_content.get("title") or ""),
+            "points": [str(x) for x in list(outline_content.get("points") or [])],
+        },
+        description_content=description_content,
+        status=str(row["status"]),
+        created_at=_as_dt(row["created_at"]),
+        updated_at=_as_dt(row["updated_at"]),
+    )
+
+
+def _get_project_detail_or_404(project_id: str) -> ProjectDetailDTO:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    pages = [_row_to_page_dto(x) for x in list_pages(project_id)]
+    return ProjectDetailDTO(
+        project_id=str(project["project_id"]),
+        title=str(project["title"]),
+        creation_type=str(project["creation_type"]),
+        idea_prompt=str(project["idea_prompt"] or ""),
+        outline_text=str(project["outline_text"] or ""),
+        material_text=str(project["material_text"] or ""),
+        style=str(project["style"]),
+        template_id=str(project["template_id"]),
+        target_pages=int(project["target_pages"]),
+        status=str(project["status"]),
+        pptx_url=project["pptx_url"],
+        pages=pages,
+        created_at=_as_dt(project["created_at"]),
+        updated_at=_as_dt(project["updated_at"]),
+    )
+
+
+def _project_to_job_detail(project_id: str) -> JobDetailResponse:
+    detail = _get_project_detail_or_404(project_id)
+    slides: list[SlideDTO] = []
+    outline: list[str] = []
+
+    for page in detail.pages:
+        outline.append(page.outline_content.title)
+        if page.description_content:
+            dc = page.description_content
+            slides.append(
+                SlideDTO(
+                    page=page.order_index + 1,
+                    title=str(dc.title),
+                    bullets=[str(x) for x in dc.bullets],
+                    notes=str(dc.notes),
+                    slide_type=dc.slide_type,
+                    evidence=dc.evidence,
+                )
+            )
+
+    return JobDetailResponse(
+        job_id=detail.project_id,
+        status=detail.status,
+        style=detail.style,
+        template_id=detail.template_id,
+        title=detail.title,
+        outline=outline,
+        slides=slides,
+        pptx_url=detail.pptx_url,
+        created_at=detail.created_at,
+    )
+
+
+def _create_project_row(req: ProjectCreateRequest) -> str:
+    if not template_exists(req.template_id):
+        raise HTTPException(status_code=400, detail="模板不存在")
+
+    project_id = str(uuid4())
+    now = utc_now_iso()
+    db_create_project(
+        {
+            "project_id": project_id,
+            "title": req.title,
+            "creation_type": req.creation_type,
+            "idea_prompt": req.title,
+            "outline_text": req.outline_text,
+            "material_text": req.material_text,
+            "style": req.style,
+            "template_id": req.template_id,
+            "target_pages": req.target_pages,
+            "status": "DRAFT",
+            "pptx_url": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    return project_id
+
+
+def _create_task(project_id: str, task_type: str, total: int = 0) -> str:
+    task_id = str(uuid4())
+    create_task(
+        {
+            "task_id": task_id,
+            "project_id": project_id,
+            "task_type": task_type,
+            "status": "PENDING",
+            "progress_json": make_progress(total, 0, 0, "queued"),
+            "error_message": None,
+            "result_json": None,
+            "created_at": utc_now_iso(),
+            "completed_at": None,
+        }
+    )
+    return task_id
 
 
 @router.get("/model/config", response_model=ModelConfigResponse)
@@ -71,74 +236,195 @@ def preview_outline(req: OutlinePreviewRequest) -> OutlinePreviewResponse:
     return OutlinePreviewResponse(outline=outline)
 
 
+@router.post("/projects", response_model=ProjectCreateResponse)
+def create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
+    project_id = _create_project_row(req)
+    return ProjectCreateResponse(project_id=project_id, status="DRAFT")
+
+
+@router.get("/projects", response_model=List[ProjectListItemDTO])
+def project_history() -> List[ProjectListItemDTO]:
+    rows = list_projects(100)
+    return [
+        ProjectListItemDTO(
+            project_id=str(r["project_id"]),
+            title=str(r["title"]),
+            style=str(r["style"]),
+            template_id=str(r["template_id"]),
+            status=str(r["status"]),
+            created_at=_as_dt(r["created_at"]),
+            updated_at=_as_dt(r["updated_at"]),
+        )
+        for r in rows
+    ]
+
+
+@router.get("/projects/{project_id}", response_model=ProjectDetailDTO)
+def project_detail(project_id: str) -> ProjectDetailDTO:
+    return _get_project_detail_or_404(project_id)
+
+
+@router.post("/projects/{project_id}/generate/outline", response_model=ProjectDetailDTO)
+def generate_project_outline(project_id: str, req: ProjectOutlineGenerateRequest) -> ProjectDetailDTO:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    requested_outline = clean_outline_items(req.outline or [])
+    outline = get_outline_for_project(project, requested_outline if requested_outline else None)
+    if not outline:
+        raise HTTPException(status_code=400, detail="大纲为空，无法生成")
+
+    rebuild_project_pages(project_id, outline)
+    return _get_project_detail_or_404(project_id)
+
+
+@router.post("/projects/{project_id}/generate/descriptions", response_model=TaskStartResponse)
+def start_descriptions(project_id: str) -> TaskStartResponse:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    pages = list_pages(project_id)
+    if not pages:
+        raise HTTPException(status_code=400, detail="请先生成大纲")
+
+    task_id = _create_task(project_id, "GENERATE_DESCRIPTIONS", len(pages))
+    task_manager.submit_task(task_id, generate_descriptions_task, project_id)
+    return TaskStartResponse(task_id=task_id)
+
+
+@router.post("/projects/{project_id}/generate/ppt", response_model=TaskStartResponse)
+def start_generate_ppt(project_id: str) -> TaskStartResponse:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    pages = list_pages(project_id)
+    if not pages:
+        raise HTTPException(status_code=400, detail="请先生成大纲")
+
+    task_id = _create_task(project_id, "GENERATE_PPT", len(pages))
+    task_manager.submit_task(task_id, generate_ppt_task, project_id)
+    return TaskStartResponse(task_id=task_id)
+
+
+@router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskDTO)
+def project_task_detail(project_id: str, task_id: str) -> TaskDTO:
+    row = get_project_task(project_id, task_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    progress = _parse_json(row["progress_json"], {})
+    return TaskDTO(
+        task_id=str(row["task_id"]),
+        project_id=str(row["project_id"]),
+        task_type=str(row["task_type"]),
+        status=str(row["status"]),
+        progress=TaskProgressDTO(
+            total=int(progress.get("total", 0)),
+            completed=int(progress.get("completed", 0)),
+            failed=int(progress.get("failed", 0)),
+            current_step=progress.get("current_step"),
+        ),
+        error_message=row["error_message"],
+        result=_parse_json(row["result_json"], None),
+        created_at=_as_dt(row["created_at"]),
+        completed_at=_as_dt(row["completed_at"]) if row["completed_at"] else None,
+    )
+
+
+@router.get("/tasks/{task_id}", response_model=TaskDTO)
+def global_task_detail(task_id: str) -> TaskDTO:
+    row = get_task(task_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    progress = _parse_json(row["progress_json"], {})
+    return TaskDTO(
+        task_id=str(row["task_id"]),
+        project_id=str(row["project_id"]),
+        task_type=str(row["task_type"]),
+        status=str(row["status"]),
+        progress=TaskProgressDTO(
+            total=int(progress.get("total", 0)),
+            completed=int(progress.get("completed", 0)),
+            failed=int(progress.get("failed", 0)),
+            current_step=progress.get("current_step"),
+        ),
+        error_message=row["error_message"],
+        result=_parse_json(row["result_json"], None),
+        created_at=_as_dt(row["created_at"]),
+        completed_at=_as_dt(row["completed_at"]) if row["completed_at"] else None,
+    )
+
+
+@router.post("/projects/{project_id}/rewrite", response_model=GenerateResponse)
+def rewrite_project_slides(project_id: str, req: RewriteRequest) -> GenerateResponse:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    rewrite_project(project_id, req.action)
+    return GenerateResponse(job_id=project_id)
+
+
+# Compatibility endpoints
+
+
 @router.post("/jobs", response_model=GenerateResponse)
 def create_job(req: GenerateRequest) -> GenerateResponse:
-    if not template_exists(req.template_id):
-        raise HTTPException(status_code=400, detail="模板不存在")
-
-    job_id = str(uuid4())
-    material = parse_text_input(req.title, req.outline_text, req.material_text)
-
-    outline = [x.strip() for x in (req.outline or []) if x and x.strip()]
-    result = run_generation(
-        {
-            "job_id": job_id,
-            "title": req.title,
-            "style": req.style,
-            "template_id": req.template_id,
-            "target_pages": req.target_pages,
-            "material": material,
-            "outline": outline if outline else None,
-            "rewrite_action": "",
-            "created_at": datetime.utcnow().isoformat(),
-        }
+    project_id = _create_project_row(
+        ProjectCreateRequest(
+            title=req.title,
+            material_text=req.material_text,
+            outline_text=req.outline_text,
+            style=req.style,
+            template_id=req.template_id,
+            target_pages=req.target_pages,
+            creation_type="idea",
+        )
     )
-    return GenerateResponse(job_id=result["job_id"])
+
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=500, detail="项目创建失败")
+
+    requested_outline = clean_outline_items(req.outline or [])
+    outline = get_outline_for_project(project, requested_outline if requested_outline else None)
+    rebuild_project_pages(project_id, outline)
+
+    desc_task_id = _create_task(project_id, "GENERATE_DESCRIPTIONS", len(outline))
+    generate_descriptions_task(desc_task_id, project_id)
+    desc_task = get_task(desc_task_id)
+    if desc_task and str(desc_task["status"]) == "FAILED":
+        raise HTTPException(status_code=500, detail=str(desc_task["error_message"] or "描述生成失败"))
+
+    ppt_task_id = _create_task(project_id, "GENERATE_PPT", len(outline))
+    generate_ppt_task(ppt_task_id, project_id)
+    ppt_task = get_task(ppt_task_id)
+    if ppt_task and str(ppt_task["status"]) == "FAILED":
+        raise HTTPException(status_code=500, detail=str(ppt_task["error_message"] or "PPT导出失败"))
+
+    return GenerateResponse(job_id=project_id)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)
 def job_detail(job_id: str) -> JobDetailResponse:
-    row = get_job(job_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="任务不存在")
-
-    slides_raw = json.loads(row["slides_json"])
-    slides = [
-        SlideDTO(
-            page=item["page"],
-            title=item["title"],
-            bullets=item["bullets"],
-            notes=item.get("notes", ""),
-            slide_type=item.get("slide_type"),
-            evidence=item.get("evidence"),
-        )
-        for item in slides_raw
-    ]
-
-    return JobDetailResponse(
-        job_id=row["job_id"],
-        status=row["status"],
-        style=row["style"],
-        template_id=row["template_id"] if "template_id" in row.keys() else "executive_clean",
-        title=row["title"],
-        outline=json.loads(row["outline_json"]),
-        slides=slides,
-        pptx_url=row["pptx_url"],
-        created_at=datetime.fromisoformat(row["created_at"]),
-    )
+    return _project_to_job_detail(job_id)
 
 
 @router.get("/jobs", response_model=List[HistoryItem])
 def history() -> List[HistoryItem]:
-    rows = list_jobs(100)
+    rows = list_projects(100)
     return [
         HistoryItem(
-            job_id=r["job_id"],
-            title=r["title"],
-            style=r["style"],
-            template_id=r["template_id"] if "template_id" in r.keys() else "executive_clean",
-            status=r["status"],
-            created_at=datetime.fromisoformat(r["created_at"]),
+            job_id=str(r["project_id"]),
+            title=str(r["title"]),
+            style=str(r["style"]),
+            template_id=str(r["template_id"]),
+            status=str(r["status"]),
+            created_at=_as_dt(r["created_at"]),
         )
         for r in rows
     ]
@@ -146,24 +432,8 @@ def history() -> List[HistoryItem]:
 
 @router.post("/jobs/{job_id}/rewrite", response_model=GenerateResponse)
 def rewrite(job_id: str, req: RewriteRequest) -> GenerateResponse:
-    row = get_job(job_id)
-    if not row:
+    project = get_project(job_id)
+    if not project:
         raise HTTPException(status_code=404, detail="任务不存在")
-
-    material = row["material_text"] if "material_text" in row.keys() else ""
-
-    result = run_generation(
-        {
-            "job_id": job_id,
-            "title": row["title"],
-            "style": row["style"],
-            "template_id": row["template_id"] if "template_id" in row.keys() else "executive_clean",
-            "target_pages": len(json.loads(row["outline_json"])),
-            "material": material,
-            "rewrite_action": req.action,
-            "created_at": datetime.utcnow().isoformat(),
-            "outline": json.loads(row["outline_json"]),
-            "slides": json.loads(row["slides_json"]),
-        }
-    )
-    return GenerateResponse(job_id=result["job_id"])
+    rewrite_project(job_id, req.action)
+    return GenerateResponse(job_id=job_id)

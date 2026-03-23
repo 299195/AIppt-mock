@@ -1,0 +1,14 @@
+{
+  "name": "aippt-pptx-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "generate_deck.js",
+  "scripts": {
+    "generate": "node generate_deck.js"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "pptxgenjs": "^4.0.1"
+  }
+}

@@ -1,0 +1,30 @@
+﻿# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+backend/.venv311/
+
+# Node
+node_modules/
+backend/pptx_generator/node_modules/
+frontend/node_modules/
+
+# Build / runtime artifacts
+backend/exports/
+backend/exports/generated_images/
+backend/data/*.db
+data/
+
+# Temp
+.tmp_banana/
+*.log

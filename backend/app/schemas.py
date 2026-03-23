@@ -1,5 +1,7 @@
-﻿from datetime import datetime
-from typing import List, Literal, Optional
+﻿from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +9,7 @@ from pydantic import BaseModel, Field
 StyleType = Literal["management", "technical"]
 RewriteAction = Literal["concise", "management", "technical"]
 TemplateId = str
+CreationType = Literal["idea", "outline"]
 
 
 class GenerateResponse(BaseModel):
@@ -90,3 +93,96 @@ class TemplateItem(BaseModel):
     preview_fg: str
     preview_accent: str
     preview_image_url: Optional[str] = None
+
+
+class ProjectCreateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    material_text: str = Field(default="")
+    outline_text: str = Field(default="")
+    style: StyleType = "management"
+    template_id: TemplateId = Field(default="executive_clean", pattern=r"^[a-z0-9_\\-]+$", min_length=2, max_length=80)
+    target_pages: int = Field(default=8, ge=8, le=12)
+    creation_type: CreationType = "idea"
+
+
+class ProjectCreateResponse(BaseModel):
+    project_id: str
+    status: str
+
+
+class ProjectOutlineGenerateRequest(BaseModel):
+    outline: Optional[List[str]] = None
+
+
+class TaskStartResponse(BaseModel):
+    task_id: str
+
+
+class TaskProgressDTO(BaseModel):
+    total: int = 0
+    completed: int = 0
+    failed: int = 0
+    current_step: Optional[str] = None
+
+
+class TaskDTO(BaseModel):
+    task_id: str
+    project_id: str
+    task_type: str
+    status: str
+    progress: TaskProgressDTO
+    error_message: Optional[str] = None
+    result: Optional[dict[str, Any]] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class OutlineContentDTO(BaseModel):
+    title: str
+    points: List[str] = []
+
+
+class DescriptionContentDTO(BaseModel):
+    title: str
+    bullets: List[str]
+    notes: str
+    slide_type: Optional[str] = None
+    evidence: Optional[List[str]] = None
+    chart_data: Optional[dict[str, Any]] = None
+
+
+class PageDTO(BaseModel):
+    page_id: str
+    order_index: int
+    outline_content: OutlineContentDTO
+    description_content: Optional[DescriptionContentDTO] = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectDetailDTO(BaseModel):
+    project_id: str
+    title: str
+    creation_type: CreationType
+    idea_prompt: str
+    outline_text: str
+    material_text: str
+    style: StyleType
+    template_id: TemplateId
+    target_pages: int
+    status: str
+    pptx_url: Optional[str] = None
+    pages: List[PageDTO]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectListItemDTO(BaseModel):
+    project_id: str
+    title: str
+    style: StyleType
+    template_id: TemplateId
+    status: str
+    created_at: datetime
+    updated_at: datetime
