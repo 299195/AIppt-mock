@@ -386,19 +386,24 @@ def _export_with_ai_to_pptx(
     outline: List[str] | None,
     subtitle: str,
     toc_items: List[str] | None,
+    outline_markdown: str | None = None,
+    content_markdown: str | None = None,
 ) -> str:
     _ensure_ai_to_pptx_ready()
     php_bin = _find_php_bin()
 
+    outline_md = str(outline_markdown or "").strip()
+    content_md = str(content_markdown or "").strip()
     body_slides = _content_slides(slides)
     if not body_slides:
         body_slides = [x for x in slides if _normalize_md_text(str(x.get("title") or ""), max_len=80)]
-    if not body_slides:
-        raise RuntimeError("no slide content available for Ai-To-PPTX export")
 
-    topic_text = _default_topic(topic, body_slides)
-    outline_markdown = _build_outline_markdown(topic_text, body_slides, outline, toc_items)
-    content_markdown = _build_content_markdown(topic_text, body_slides, outline, toc_items)
+    if not outline_md or not content_md:
+        if not body_slides:
+            raise RuntimeError("no slide content available for Ai-To-PPTX export")
+        topic_text = _default_topic(topic, body_slides)
+        outline_md = _build_outline_markdown(topic_text, body_slides, outline, toc_items)
+        content_md = _build_content_markdown(topic_text, body_slides, outline, toc_items)
     template_path = _resolve_ai_to_pptx_template_json(template_id)
     author_text = _normalize_md_text(subtitle or "", max_len=32)
     last_page_text = _normalize_md_text(os.getenv("AIPPTX_LAST_PAGE_TEXT", "鎰熻阿鑱嗗惉"), max_len=32) or "鎰熻阿鑱嗗惉"
@@ -407,10 +412,10 @@ def _export_with_ai_to_pptx(
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     with NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as outline_tmp:
-        outline_tmp.write(outline_markdown)
+        outline_tmp.write(outline_md)
         outline_path = Path(outline_tmp.name)
     with NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as content_tmp:
-        content_tmp.write(content_markdown)
+        content_tmp.write(content_md)
         content_path = Path(content_tmp.name)
 
     try:
@@ -549,6 +554,8 @@ def export_slides_to_pptx(
     toc_items: List[str] | None = None,
     style: str = "management",
     theme_seed: str = "",
+    outline_markdown: str | None = None,
+    content_markdown: str | None = None,
 ) -> str:
     # ai_to_pptx: strict Ai-To-PPTX exporter (same engine as SmartSchoolAI backend)
     # auto: try Ai-To-PPTX first, fallback to legacy node exporter
@@ -568,6 +575,8 @@ def export_slides_to_pptx(
                 outline=outline,
                 subtitle=subtitle,
                 toc_items=toc_items,
+                outline_markdown=outline_markdown,
+                content_markdown=content_markdown,
             )
         except Exception as exc:  # noqa: PERF203
             ai_error = exc

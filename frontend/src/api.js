@@ -93,7 +93,10 @@ export async function createJob(payload) {
     const outlineRes = await fetch(`${API_BASE}/projects/${projectId}/generate/outline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outline: payload.outline || [] }),
+        body: JSON.stringify({
+            outline: payload.outline || [],
+            outline_markdown: payload.outline_markdown || payload.outline_text || "",
+        }),
     });
     if (!outlineRes.ok)
         return readError(outlineRes, `生成大纲失败: HTTP ${outlineRes.status}`);

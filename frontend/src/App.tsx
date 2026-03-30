@@ -163,7 +163,7 @@ function App() {
         style,
         target_pages: pages,
       });
-      setOutlineText(formatOutlineText(res.outline));
+      setOutlineText((res.outline_markdown || "").trim() || formatOutlineText(res.outline));
     } catch (e) {
       setError(errorText(e, "大纲生成失败"));
     } finally {
@@ -189,7 +189,8 @@ function App() {
       const res = await createJob({
         title: title.trim(),
         material_text: materialText,
-        outline_text: "",
+        outline_text: outlineText,
+        outline_markdown: outlineText,
         outline: normalizedOutline,
         style,
         template_id: templateId,

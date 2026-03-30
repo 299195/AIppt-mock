@@ -131,13 +131,14 @@ export async function previewOutline(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) return readError(res, `大纲预览失败: HTTP ${res.status}`);
-  return (await res.json()) as { outline: string[] };
+  return (await res.json()) as { outline: string[]; outline_markdown?: string };
 }
 
 export async function createJob(payload: {
   title: string;
   material_text: string;
   outline_text: string;
+  outline_markdown?: string;
   outline: string[];
   style: StyleType;
   template_id: string;
@@ -163,7 +164,10 @@ export async function createJob(payload: {
   const outlineRes = await fetch(`${API_BASE}/projects/${projectId}/generate/outline`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ outline: payload.outline || [] }),
+    body: JSON.stringify({
+      outline: payload.outline || [],
+      outline_markdown: payload.outline_markdown || payload.outline_text || "",
+    }),
   });
   if (!outlineRes.ok) return readError(outlineRes, `生成大纲失败: HTTP ${outlineRes.status}`);
 

@@ -83,6 +83,7 @@ class OutlinePreviewRequest(BaseModel):
 
 class OutlinePreviewResponse(BaseModel):
     outline: List[str]
+    outline_markdown: Optional[str] = None
 
 
 class TemplateItem(BaseModel):
@@ -113,6 +114,7 @@ class ProjectCreateResponse(BaseModel):
 
 class ProjectOutlineGenerateRequest(BaseModel):
     outline: Optional[List[str]] = None
+    outline_markdown: Optional[str] = None
 
 
 class TaskStartResponse(BaseModel):
