@@ -17,11 +17,11 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 _PPTX_GENERATOR_DIR = Path(__file__).resolve().parents[2] / "pptx_generator"
 _PPTX_GENERATOR_SCRIPT = _PPTX_GENERATOR_DIR / "generate_deck.js"
 
-_AIPPTX_DIR = _PROJECT_ROOT / "third_party" / "ai-to-pptx-backend"
-_AIPPTX_TEMPLATE_DIR = _AIPPTX_DIR / "json"
-_AIPPTX_BRIDGE_SCRIPT = _AIPPTX_DIR / "local_generate_pptx.php"
+_PPTX_BRIDGE_DIR = _PROJECT_ROOT / "export_engines" / "pptx_export_bridge"
+_PPTX_BRIDGE_TEMPLATE_DIR = _PPTX_BRIDGE_DIR / "json"
+_PPTX_BRIDGE_SCRIPT = _PPTX_BRIDGE_DIR / "local_generate_pptx.php"
 
-_AIPPTX_TEMPLATE_NAMES: dict[str, str] = {
+_PPTX_BRIDGE_TEMPLATE_NAMES: dict[str, str] = {
     "0": "\u8bfe\u7a0b\u5b66\u4e60\u6c47\u62a5",
     "1": "\u8bfb\u4e66\u5206\u4eab\u6f14\u793a",
     "2": "\u84dd\u8272\u901a\u7528\u5546\u52a1",
@@ -37,7 +37,7 @@ _AIPPTX_TEMPLATE_NAMES: dict[str, str] = {
     "no_template": "\u84dd\u8272\u901a\u7528\u5546\u52a1",
     "executive_clean": "\u84dd\u8272\u901a\u7528\u5546\u52a1",
 }
-_AIPPTX_DEFAULT_TEMPLATE = "\u84dd\u8272\u901a\u7528\u5546\u52a1"
+_PPTX_BRIDGE_DEFAULT_TEMPLATE = "\u84dd\u8272\u901a\u7528\u5546\u52a1"
 
 
 def _resolve_output_path(out_path: Path) -> Path:
@@ -62,7 +62,7 @@ def _recover_output_from_stdout(stdout: str, target_path: Path) -> bool:
             continue
         candidate = Path(raw)
         if not candidate.is_absolute():
-            candidate = (_AIPPTX_DIR / candidate).resolve()
+            candidate = (_PPTX_BRIDGE_DIR / candidate).resolve()
         if not candidate.exists() or not candidate.is_file():
             continue
         if candidate.resolve() != target_path.resolve():
@@ -311,19 +311,19 @@ def _build_content_markdown(
     return "\n".join(lines)
 
 
-def _resolve_ai_to_pptx_template_json(template_id: str) -> Path:
+def _resolve_bridge_template_json(template_id: str) -> Path:
     key = str(template_id or "").strip().lower()
-    template_name = _AIPPTX_TEMPLATE_NAMES.get(key, "")
+    template_name = _PPTX_BRIDGE_TEMPLATE_NAMES.get(key, "")
     if not template_name:
         raw = str(template_id or "").strip()
-        if (_AIPPTX_TEMPLATE_DIR / f"{raw}.json").exists():
+        if (_PPTX_BRIDGE_TEMPLATE_DIR / f"{raw}.json").exists():
             template_name = raw
         else:
-            template_name = _AIPPTX_DEFAULT_TEMPLATE
+            template_name = _PPTX_BRIDGE_DEFAULT_TEMPLATE
 
-    template_path = _AIPPTX_TEMPLATE_DIR / f"{template_name}.json"
+    template_path = _PPTX_BRIDGE_TEMPLATE_DIR / f"{template_name}.json"
     if not template_path.exists():
-        raise RuntimeError(f"Ai-To-PPTX template not found: {template_path}")
+        raise RuntimeError(f"Bridge template not found: {template_path}")
     return template_path
 
 
@@ -403,16 +403,16 @@ def _find_php_bin() -> str:
     )
 
 
-def _ensure_ai_to_pptx_ready() -> None:
-    if not _AIPPTX_DIR.exists():
-        raise RuntimeError(f"Ai-To-PPTX backend directory missing: {_AIPPTX_DIR}")
-    if not _AIPPTX_BRIDGE_SCRIPT.exists():
-        raise RuntimeError(f"Ai-To-PPTX bridge script missing: {_AIPPTX_BRIDGE_SCRIPT}")
-    if not _AIPPTX_TEMPLATE_DIR.exists():
-        raise RuntimeError(f"Ai-To-PPTX template directory missing: {_AIPPTX_TEMPLATE_DIR}")
+def _ensure_bridge_ready() -> None:
+    if not _PPTX_BRIDGE_DIR.exists():
+        raise RuntimeError(f"Bridge backend directory missing: {_PPTX_BRIDGE_DIR}")
+    if not _PPTX_BRIDGE_SCRIPT.exists():
+        raise RuntimeError(f"Bridge script missing: {_PPTX_BRIDGE_SCRIPT}")
+    if not _PPTX_BRIDGE_TEMPLATE_DIR.exists():
+        raise RuntimeError(f"Bridge template directory missing: {_PPTX_BRIDGE_TEMPLATE_DIR}")
 
 
-def _export_with_ai_to_pptx(
+def _export_with_bridge(
     slides: List[Dict],
     out_path: Path,
     template_id: str,
@@ -423,7 +423,7 @@ def _export_with_ai_to_pptx(
     outline_markdown: str | None = None,
     content_markdown: str | None = None,
 ) -> str:
-    _ensure_ai_to_pptx_ready()
+    _ensure_bridge_ready()
     php_bin = _find_php_bin()
 
     outline_md = str(outline_markdown or "").strip()
@@ -431,9 +431,9 @@ def _export_with_ai_to_pptx(
     if not outline_md or not content_md:
         raise RuntimeError(
             "third-party markdown missing: outline_markdown/content_markdown are required "
-            "for strict Ai-To-PPTX flow"
+            "for strict Bridge flow"
         )
-    template_path = _resolve_ai_to_pptx_template_json(template_id)
+    template_path = _resolve_bridge_template_json(template_id)
     author_text = _normalize_md_text(subtitle or "", max_len=32)
     last_page_text = _normalize_md_text(
         os.getenv("AIPPTX_LAST_PAGE_TEXT", "\u975e\u5e38\u611f\u8c22\u5927\u5bb6\u8046\u542c"),
@@ -454,7 +454,7 @@ def _export_with_ai_to_pptx(
     try:
         cmd = [
             php_bin,
-            str(_AIPPTX_BRIDGE_SCRIPT),
+            str(_PPTX_BRIDGE_SCRIPT),
             str(template_path),
             str(outline_path),
             str(content_path),
@@ -466,7 +466,7 @@ def _export_with_ai_to_pptx(
         for attempt in range(1, 3):
             completed = subprocess.run(
                 cmd,
-                cwd=str(_AIPPTX_DIR),
+                cwd=str(_PPTX_BRIDGE_DIR),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -481,7 +481,7 @@ def _export_with_ai_to_pptx(
                 detail = stderr or stdout or f"exit code {completed.returncode}"
                 if "did not produce output" in detail.lower():
                     detail = f"{detail} (php: {php_bin})"
-                raise RuntimeError(f"Ai-To-PPTX export failed: {detail}")
+                raise RuntimeError(f"Bridge export failed: {detail}")
 
             if target_path.exists() or _wait_for_file(target_path, timeout_sec=6.0, interval_sec=0.25):
                 return target_path.name
@@ -500,7 +500,7 @@ def _export_with_ai_to_pptx(
                 continue
 
             raise RuntimeError(
-                "Ai-To-PPTX exporter returned success but output file is missing. "
+                "Bridge exporter returned success but output file is missing. "
                 f"target={target_path}; php={php_bin}; {last_missing_detail}"
             )
     finally:
@@ -611,17 +611,17 @@ def export_slides_to_pptx(
     outline_markdown: str | None = None,
     content_markdown: str | None = None,
 ) -> str:
-    # ai_to_pptx: strict Ai-To-PPTX exporter (same engine as SmartSchoolAI backend)
-    # auto: try Ai-To-PPTX first, fallback to legacy node exporter
+    # bridge: strict Bridge exporter (same engine as SmartSchoolAI backend)
+    # auto: try Bridge first, fallback to legacy node exporter
     # legacy: force existing node exporter
-    engine = str(os.getenv("AIPPT_EXPORT_ENGINE", "ai_to_pptx") or "ai_to_pptx").strip().lower()
-    if engine not in {"ai_to_pptx", "auto", "legacy"}:
-        engine = "ai_to_pptx"
+    engine = str(os.getenv("PPT_EXPORT_ENGINE", "bridge") or "bridge").strip().lower()
+    if engine not in {"bridge", "auto", "legacy"}:
+        engine = "bridge"
 
-    ai_error: Exception | None = None
-    if engine in {"ai_to_pptx", "auto"}:
+    bridge_error: Exception | None = None
+    if engine in {"bridge", "auto"}:
         try:
-            return _export_with_ai_to_pptx(
+            return _export_with_bridge(
                 slides=slides,
                 out_path=out_path,
                 template_id=template_id,
@@ -633,10 +633,10 @@ def export_slides_to_pptx(
                 content_markdown=content_markdown,
             )
         except Exception as exc:  # noqa: PERF203
-            ai_error = exc
-            if engine == "ai_to_pptx":
+            bridge_error = exc
+            if engine == "bridge":
                 raise RuntimeError(
-                    f"Ai-To-PPTX export failed. Original error: {exc}"
+                    f"Bridge export failed. Original error: {exc}"
                 ) from exc
 
     try:
@@ -652,10 +652,11 @@ def export_slides_to_pptx(
             theme_seed=theme_seed,
         )
     except Exception as node_exc:
-        if ai_error is None:
+        if bridge_error is None:
             raise
         raise RuntimeError(
-            f"Both exporters failed. Ai-To-PPTX error: {ai_error}; "
+            f"Both exporters failed. Bridge error: {bridge_error}; "
             f"legacy exporter error: {node_exc}"
         ) from node_exc
+
 

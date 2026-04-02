@@ -20,7 +20,7 @@ AIPPTX_BUILTIN_TEMPLATES: List[Dict[str, object]] = [
     {
         "id": "a2p_0",
         "name": "课程学习汇报",
-        "subtitle": "Ai-To-PPTX Built-in",
+        "subtitle": "Bridge Built-in",
         "summary": "SmartSchoolAI template set #0.",
         "preview_bg": "#edf3ff",
         "preview_fg": "#1e4168",
@@ -30,7 +30,7 @@ AIPPTX_BUILTIN_TEMPLATES: List[Dict[str, object]] = [
     {
         "id": "a2p_1",
         "name": "读书分享演示",
-        "subtitle": "Ai-To-PPTX Built-in",
+        "subtitle": "Bridge Built-in",
         "summary": "SmartSchoolAI template set #1.",
         "preview_bg": "#fff3e6",
         "preview_fg": "#6e4f2d",
@@ -40,7 +40,7 @@ AIPPTX_BUILTIN_TEMPLATES: List[Dict[str, object]] = [
     {
         "id": "a2p_2",
         "name": "蓝色通用商务",
-        "subtitle": "Ai-To-PPTX Built-in",
+        "subtitle": "Bridge Built-in",
         "summary": "SmartSchoolAI template set #2.",
         "preview_bg": "#eef4ff",
         "preview_fg": "#1f3a66",
@@ -50,7 +50,7 @@ AIPPTX_BUILTIN_TEMPLATES: List[Dict[str, object]] = [
     {
         "id": "a2p_3",
         "name": "蓝色工作汇报总结",
-        "subtitle": "Ai-To-PPTX Built-in",
+        "subtitle": "Bridge Built-in",
         "summary": "SmartSchoolAI template set #3.",
         "preview_bg": "#e8f2f8",
         "preview_fg": "#0f3a55",

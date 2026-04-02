@@ -21,10 +21,10 @@ if exist ".venv311\Scripts\python.exe" (
   exit /b 1
 )
 
-set "AIPPT_EXPORT_ENGINE=ai_to_pptx"
+set "PPT_EXPORT_ENGINE=bridge"
 
 echo [INFO] Working dir: %CD%
-echo [INFO] Export engine: %AIPPT_EXPORT_ENGINE%
+echo [INFO] Export engine: %PPT_EXPORT_ENGINE%
 echo [INFO] Starting backend at http://127.0.0.1:%BACKEND_PORT%
 
 "%PYTHON_EXE%" -m uvicorn app.main:app --reload --host 127.0.0.1 --port %BACKEND_PORT%
