@@ -20,12 +20,17 @@ backend/pptx_generator/node_modules/
 frontend/node_modules/
 
 # Build / runtime artifacts
+.backend_port
+/*.pptx
 backend/exports/
 backend/exports/generated_images/
 backend/data/*.db
 backend/tools/php/
 data/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Temp
 .tmp_banana/
+.tmp_ppt_review/
 *.log

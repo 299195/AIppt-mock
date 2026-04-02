@@ -18,8 +18,12 @@ if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8001"
 set "VITE_API_BASE=http://127.0.0.1:%BACKEND_PORT%/api"
 set "VITE_FILE_BASE=http://127.0.0.1:%BACKEND_PORT%"
 
-if not exist "node_modules" (
-  echo [INFO] node_modules not found, installing dependencies...
+set "NEED_INSTALL=0"
+if not exist "node_modules" set "NEED_INSTALL=1"
+if not exist "node_modules\.bin\vite.cmd" set "NEED_INSTALL=1"
+
+if "%NEED_INSTALL%"=="1" (
+  echo [INFO] frontend dependencies missing or incomplete, installing...
   call npm.cmd install
   if errorlevel 1 (
     echo [ERROR] npm install failed.
